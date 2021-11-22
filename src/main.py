@@ -24,7 +24,7 @@ def train_model():
     # initialize model
     # for using with optical flow change modality to "optical_flow"
     unet = UNet2D(n_chans_in=1, n_chans_out=2, mode="feature_discriminator")
-    criterion = torch.nn.CrossEntropyLoss() # cross entropy loss
+    criterion = torch.nn.BCELoss() # cross entropy loss
     optimizer = torch.optim.Adam(params=unet.parameters(), lr = LR) # define optimizer
     stats = {
         "epoch": [],
@@ -38,8 +38,8 @@ def train_model():
         loss_list = []
         progress_bar = tqdm(enumerate(scan_dataloader), total=len(scan_dataloader))
         for i, batch in progress_bar: # iterate over batches
-            scans = batch[0]
-            labels = batch[1]
+            scans = batch[0].float()
+            labels = batch[1].float()
             optimizer.zero_grad() # remove old grads
             y = unet(scans) # get predictions
             loss = criterion(y, labels) # find loss
