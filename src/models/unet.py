@@ -61,13 +61,14 @@ class UNet2D(nn.Module):
         )
 
         self.feature_encoder = nn.Sequential(
-            nn.Conv2d(n * 8, n * 8, stride=2, kernel_size=3),
             nn.Conv2d(n * 8, n * 16, stride=2, kernel_size=3),
             nn.Conv2d(n * 16, n * 32, stride=2, kernel_size=3),
             nn.Conv2d(n * 32, n * 64, stride=2, kernel_size=3),
-            nn.Conv2d(n * 64, 1, stride=1, kernel_size=3),
+            nn.Conv2d(n * 64, n * 128, stride=2, kernel_size=3),
+            nn.Conv2d(n * 128, 1, stride=1, kernel_size=3),
             nn.Sigmoid()
         )
+
 
         self.up3 = nn.Sequential(
             ResBlock2d(n * 8, n * 8, kernel_size=self.kernel_size, padding=self.padding),
@@ -112,13 +113,14 @@ class UNet2D(nn.Module):
         x3 = self.down3(x2)
         if self.mode == "feature_discriminator":
             domain_prediction = self.feature_encoder(x3)
+            return domain_prediction.squeeze(dim=-1).squeeze(dim=-1).squeeze(dim=-1)
         x2_up = self.up3(x3)
         x1_up = self.up2(x2_up + self.shortcut2(x2))
         x0_up = self.up1(x1_up + self.shortcut1(x1))
         x_out = self.out_path(x0_up + self.shortcut0(x0))
         return x_out
 
-
-# model = UNet2D(n_chans_in=1, n_chans_out=2)
+# #
+# model = UNet2D(n_chans_in=1, n_chans_out=2, mode="feature_discriminator")
 # X = torch.rand(10, 1, 512, 512)
 # y = model(X)
