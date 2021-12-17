@@ -3,6 +3,7 @@ import nibabel as nib
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from PIL import Image
 import numpy as np
 import os
 from tqdm import tqdm
@@ -18,6 +19,12 @@ def make_filepath_list(mode, source_domain, target_domain, scan_path, mask_path)
     mask_path = [os.path.join(mask_path, file.split(".nii")[0]+"_ss.nii.gz") for file in lines]
     return scan_path, mask_path
 
+def get_transform(pad_size):
+    pad = transforms.Pad(pad_size, fill=0, padding_mode="constant")
+    # to_tensor = transforms.ToTensor()
+    # normalize = transforms.Normalize([0.5], [0.5])
+    return transforms.Compose([pad])
+
 
 class ScanDataset(Dataset):
     def __init__(self, source_domain, target_domain, scan_path, mask_path,
@@ -30,8 +37,9 @@ class ScanDataset(Dataset):
         self.domain_list = [image_path.split("_")[1] for image_path in self.scan_path]
         self.source_domain = source_domain
         self.target_domain = target_domain
-        self.transform = transforms.Resize(288)
+        # self.transform = transforms.Resize(288)
         self.num_slices = 100
+        self.max_pad = 288
         self.mode = mode
 
     def __len__(self):
@@ -40,10 +48,15 @@ class ScanDataset(Dataset):
     def __getitem__(self, idx):
         scan_nii = self.scan_list[idx]
         mask_nii = self.mask_list[idx]
-        scan_np = torch.from_numpy(np.asarray(scan_nii.dataobj))
-        mask_np = torch.from_numpy(np.asarray(mask_nii.dataobj))
-        scan = self.transform(scan_np)
-        mask = self.transform(mask_np)
+        scan_tensor = torch.from_numpy(np.asarray(scan_nii.dataobj))
+        mask_tensor = torch.from_numpy(np.asarray(mask_nii.dataobj))
+
+        scan_size = scan_tensor.shape[-1]
+        max_across_slice_scan = scan_tensor.amax(dim=(1, 2)).unsqueeze(1).unsqueeze(1)
+        normalized_scan = scan_tensor / max_across_slice_scan
+        transform = get_transform(int((self.max_pad - scan_size)/2))
+        scan = transform(normalized_scan)
+        mask = transform(mask_tensor)
         total_slices = scan.shape[0]
         slice_start_index = torch.randint(0, total_slices - self.num_slices, (1,))
         sliced_scan = scan[slice_start_index:slice_start_index + self.num_slices]
@@ -54,7 +67,7 @@ class ScanDataset(Dataset):
             label = torch.zeros(self.num_slices,1)
         return sliced_scan, sliced_mask, label
 
-
+#
 # source_domain = "siemens"
 # target_domain = "philips"
 # scan_path = "../../data/Original/Original"
