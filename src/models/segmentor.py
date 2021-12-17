@@ -2,13 +2,12 @@ from torch import nn
 from dpipe.layers.resblock import ResBlock2d
 from dpipe.layers.conv import PreActivation2d
 import torch
-
+from torch.nn import functional as F
 
 class UNet2D(nn.Module):
     def __init__(self, n_chans_in, n_chans_out, kernel_size=3, padding=1, pooling_size=2, n_filters_init=8,
-                 dropout=False, p=0.1, mode='segmentor'):
+                 dropout=False, p=0.1):
         super().__init__()
-        self.mode = mode
         self.kernel_size = kernel_size
         self.padding = padding
         self.pooling_size = pooling_size
@@ -96,19 +95,21 @@ class UNet2D(nn.Module):
             nn.BatchNorm2d(n_chans_out)
         )
 
-
     def forward(self, x):
         x0 = self.init_path(x)
         x1 = self.down1(x0)
         x2 = self.down2(x1)
         x3 = self.down3(x2)
+
         x2_up = self.up3(x3)
         x1_up = self.up2(x2_up + self.shortcut2(x2))
         x0_up = self.up1(x1_up + self.shortcut1(x1))
         x_out = self.out_path(x0_up + self.shortcut0(x0))
-        return x_out
 
-# #
-# model = UNet2D(n_chans_in=1, n_chans_out=2, mode="feature_discriminator")
-# X = torch.rand(10, 1, 288, 288)
-# y = model(X)
+        return F.sigmoid(x_out)
+
+#
+model = UNet2D(n_chans_in=1, n_chans_out=1)
+X = torch.rand(10, 1, 288, 288)
+y = model(X)
+print(y.shape)

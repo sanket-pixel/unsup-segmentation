@@ -1,8 +1,10 @@
 import torch
 import os
 from torch.utils.data import DataLoader
-from src.models.unet import UNet2D
+from src.models.discriminator import Discriminator
+from src.models.segmentor import UNet2D
 from src.dataloder.scan_loader import ScanDataset
+from src.models.dice_bce_loss import DiceBCELoss
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -76,9 +78,14 @@ def train_model():
     model = config.get("Classification", "model")
     # initialize model
     # for using with optical flow change modality to "optical_flow"
-    unet = UNet2D(n_chans_in=1, n_chans_out=2, mode="feature_discriminator").to(device)
-    criterion = torch.nn.BCELoss().to(device)  # cross entropy loss
-    optimizer = torch.optim.Adam(params=unet.parameters(), lr=LR)  # define optimizer
+    segmentor = UNet2D(n_chans_in=1, n_chans_out=1).to(device)
+    segmentor_loss = DiceBCELoss().to(device)
+
+    discriminator = Discriminator().to(device)
+    discriminator_loss = torch.nn.BCELoss().to(device)  # cross entropy loss
+
+
+    optimizer = torch.optim.Adam(params=discriminator.parameters(), lr=LR)  # define optimizer
     stats = {
         "epoch": [],
         "train_loss": [],
