@@ -14,14 +14,15 @@ import pandas as pd
 
 config = configparser.ConfigParser()
 config.read(os.path.join("configs", "scan_seg.config"))
-scan_path = config.get("Dataloader", "silver_path")
+scan_path = config.get("Dataloader", "scan_path")
+mask_path = config.get("Dataloader","mask_path")
 source_domain = config.get("Dataloader", "source_domain")
 target_domain = config.get("Dataloader", "target_domain")
 scan_type = config.get("Dataloader", "scan_type")
 batch_size = config.getint("Dataloader", "batch_size")
 
-scan_dataset_train = ScanDataset(source_domain, target_domain, scan_path, scan_type, "training")
-scan_dataset_eval = ScanDataset(source_domain, target_domain, scan_path, scan_type, "validation")
+scan_dataset_train = ScanDataset(source_domain, target_domain, scan_path, mask_path, scan_type, "training")
+scan_dataset_eval = ScanDataset(source_domain, target_domain, scan_path, mask_path, scan_type, "validation")
 
 dataloader_train = DataLoader(scan_dataset_train, batch_size=batch_size, shuffle=True)
 dataloader_eval = DataLoader(scan_dataset_eval, batch_size=batch_size, shuffle=False)
@@ -92,7 +93,6 @@ def train_model():
         for i, batch in progress_bar:  # iterate over batches
             scans = batch[0].float().to(device)
             labels = batch[1].float().to(device)
-
             optimizer.zero_grad()  # remove old grads
             y = unet(scans)  # get predictions
             loss = criterion(y, labels)  # find loss
