@@ -11,6 +11,7 @@ from tqdm import tqdm
 import configparser
 from matplotlib import pyplot as plt
 from pathlib import Path
+from einops import rearrange
 import itertools
 import pandas as pd
 
@@ -84,6 +85,7 @@ def train_model():
     discriminator = Discriminator().to(device)
     discriminator_loss = torch.nn.BCELoss().to(device)  # cross entropy loss
 
+    adversarial_loss = torch.nn.BCELoss().to(device)
 
     optimizer = torch.optim.Adam(params=discriminator.parameters(), lr=LR)  # define optimizer
     stats = {
@@ -99,14 +101,33 @@ def train_model():
         progress_bar = tqdm(enumerate(dataloader_train), total=len(dataloader_train))
         for i, batch in progress_bar:  # iterate over batches
             scans = batch[0].float().to(device)
-            labels = batch[1].float().to(device)
+            masks = batch[1].float().to(device)
+            labels = batch[2].float().to(device)
             optimizer.zero_grad()  # remove old grads
-            y = unet(scans)  # get predictions
-            loss = criterion(y, labels)  # find loss
-            loss_list.append(loss.item())
 
-            loss.backward()  # find gradients
+            scans = rearrange(scans, "b s c h w -> (b s) c h w")
+            masks = rearrange(masks, "b s c h w -> (b s) c h w")
+            labels = rearrange(labels,"b s l->(b s) l")
+
+            predicted_masks, unet_x3 = segmentor(scans)  # get predictions
+            s_loss = segmentor_loss(predicted_masks,masks)
+
+            unet_x3_detached = unet_x3.detach().clone()
+            predicted_labels = discriminator(unet_x3_detached)
+            d_loss = discriminator_loss(predicted_labels, labels)  # find loss
+
+            total_loss = s_loss + d_loss
+            loss_list.append(total_loss.item())
+
+            total_loss.backward()  # find gradients
             optimizer.step()  # update weights
+
+            # find indices of target domains
+            target_indices = torch.where(labels==0)[0]
+            adversarial_labels = torch.logical_not(labels).int()
+            target_unet_x3 = unet_x3[target_indices]
+
+
 
             progress_bar.set_description(f"Epoch {0 + epoch} Iter {i + 1}: loss {loss.item():.5f}. ")
         print("Average Loss", np.mean(loss_list))
@@ -169,10 +190,12 @@ def show_accuracy_table(source_domain,target_domain,accuracy_dict):
     model_dict = torch.load("../models/" + model_name + ".pth")
     accuracy_dict[source_domain+"_"+target_domain] = [model_dict["stats"]["accuracy"][-1]]
 
-combinations = [["siemens", "ge"], ["siemens", "philips"],
-                ["ge", "siemens"], ["ge", "philips"],
-                ["philips", "ge"], ["philips", "siemens"]]
-accuracy_dict = {}
-for c in combinations:
-    show_accuracy_table(c[0], c[1],accuracy_dict)
-print(pd.DataFrame(accuracy_dict).transpose())
+# combinations = [["siemens", "ge"], ["siemens", "philips"],
+#                 ["ge", "siemens"], ["ge", "philips"],
+#                 ["philips", "ge"], ["philips", "siemens"]]
+# accuracy_dict = {}
+# for c in combinations:
+#     show_accuracy_table(c[0], c[1],accuracy_dict)
+# print(pd.DataFrame(accuracy_dict).transpose())
+
+train_model()
