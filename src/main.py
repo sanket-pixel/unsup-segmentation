@@ -12,8 +12,11 @@ import configparser
 from matplotlib import pyplot as plt
 from pathlib import Path
 from einops import rearrange
+import copy
 import itertools
 import pandas as pd
+
+torch.autograd.set_detect_anomaly(True)
 
 config = configparser.ConfigParser()
 config.read(os.path.join("configs", "scan_seg.config"))
@@ -87,7 +90,8 @@ def train_model():
 
     adversarial_loss = torch.nn.BCELoss().to(device)
 
-    optimizer = torch.optim.Adam(params=discriminator.parameters(), lr=LR)  # define optimizer
+    params = list(discriminator.parameters()) + list(segmentor.parameters())
+    optimizer = torch.optim.Adam(params=params, lr=LR)  # define optimizer
     stats = {
         "epoch": [],
         "train_loss": [],
@@ -112,40 +116,45 @@ def train_model():
             predicted_masks, unet_x3 = segmentor(scans)  # get predictions
             s_loss = segmentor_loss(predicted_masks,masks)
 
-            unet_x3_detached = unet_x3.detach().clone()
+            unet_x3_detached = unet_x3.clone().detach()
             predicted_labels = discriminator(unet_x3_detached)
             d_loss = discriminator_loss(predicted_labels, labels)  # find loss
 
             total_loss = s_loss + d_loss
             loss_list.append(total_loss.item())
 
-            total_loss.backward()  # find gradients
+            total_loss.backward(retain_graph=True)
             optimizer.step()  # update weights
 
             # find indices of target domains
+            discriminator_state_dict = copy.deepcopy(discriminator.state_dict())
             target_indices = torch.where(labels==0)[0]
-            adversarial_labels = torch.logical_not(labels).int()
-            target_unet_x3 = unet_x3[target_indices]
+            if target_indices.shape[0]>0:
+                adversarial_labels = torch.logical_not(labels).float()[target_indices]
+                target_unet_x3 = unet_x3[target_indices]
+                adversarial_predicted_labels = discriminator(target_unet_x3)
+                a_loss = adversarial_loss(adversarial_predicted_labels,adversarial_labels)
+                a_loss.backward()  # find gradients
+                optimizer.step()  # update weights
+                discriminator.load_state_dict(discriminator_state_dict)
 
-
-
-            progress_bar.set_description(f"Epoch {0 + epoch} Iter {i + 1}: loss {loss.item():.5f}. ")
-        print("Average Loss", np.mean(loss_list))
-        # update stats
-        loss_hist.append(np.mean(loss_list))
-        stats['epoch'].append(epoch)
-        stats['train_loss'].append(loss_hist[-1])
-
-        if epoch % EVAL_FREQ == 0:
-            accuracy, valid_loss = eval_model(unet)
-            print(f"Accuracy at epoch {epoch}: {round(accuracy, 2)}%")
-        else:
-            accuracy, valid_loss = -1, -1
-        stats["accuracy"].append(accuracy)
-        stats["valid_loss"].append(valid_loss)
-        if epoch % SAVE_FREQ == 0:
-            model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
-            save_model(unet, stats, model_name)
+        #     progress_bar.set_description(f"Epoch {0 + epoch} Iter {i + 1}: loss {loss.item():.5f}. ")
+        # print("Average Loss", np.mean(loss_list))
+        # # update stats
+        # loss_hist.append(np.mean(loss_list))
+        # stats['epoch'].append(epoch)
+        # stats['train_loss'].append(loss_hist[-1])
+        #
+        # if epoch % EVAL_FREQ == 0:
+        #     accuracy, valid_loss = eval_model(unet)
+        #     print(f"Accuracy at epoch {epoch}: {round(accuracy, 2)}%")
+        # else:
+        #     accuracy, valid_loss = -1, -1
+        # stats["accuracy"].append(accuracy)
+        # stats["valid_loss"].append(valid_loss)
+        # if epoch % SAVE_FREQ == 0:
+        #     model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
+        #     save_model(unet, stats, model_name)
 
 
 # train_model()
