@@ -12,7 +12,7 @@ import cv2 as cv
 
 def make_filepath_list(mode, source_domain, target_domain, scan_path, mask_path):
     folder_name = source_domain + "_" + target_domain
-    filename_path = os.path.join("..", "..", "data", folder_name, mode + ".txt")
+    filename_path = os.path.join("..", "data", folder_name, mode + ".txt")
     with open(filename_path, "r") as f:
         lines = f.read().split("\n")[:-1]
     scan_path = [os.path.join(scan_path, file) for file in lines]
@@ -38,7 +38,7 @@ class ScanDataset(Dataset):
         self.source_domain = source_domain
         self.target_domain = target_domain
         # self.transform = transforms.Resize(288)
-        self.num_slices = 100
+        self.num_slices = 10
         self.max_pad = 288
         self.mode = mode
 
@@ -61,13 +61,15 @@ class ScanDataset(Dataset):
         slice_start_index = torch.randint(0, total_slices - self.num_slices, (1,))
         sliced_scan = scan[slice_start_index:slice_start_index + self.num_slices]
         sliced_mask = mask[slice_start_index:slice_start_index + self.num_slices]
+        sliced_scan = sliced_scan.unsqueeze(1)
+        sliced_mask = sliced_mask.unsqueeze(1)
         if self.domain_list[idx] == self.source_domain:
             label = torch.ones(self.num_slices, 1)
         else:
-            label = torch.zeros(self.num_slices,1)
+            label = torch.zeros(self.num_slices, 1)
         return sliced_scan, sliced_mask, label
 
-#
+
 # source_domain = "siemens"
 # target_domain = "philips"
 # scan_path = "../../data/Original/Original"

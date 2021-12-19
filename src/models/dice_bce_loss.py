@@ -18,4 +18,6 @@ class DiceBCELoss(nn.Module):
 
         Dice_BCE = BCE + dice_loss
 
-        return Dice_BCE, BCE, dice_loss
+        return Dice_BCE
+
+        # return Dice_BCE, BCE, dice_loss

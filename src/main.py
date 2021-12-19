@@ -15,13 +15,14 @@ from einops import rearrange
 import copy
 import itertools
 import pandas as pd
+import gc
 
 torch.autograd.set_detect_anomaly(True)
 
 config = configparser.ConfigParser()
 config.read(os.path.join("configs", "scan_seg.config"))
 scan_path = config.get("Dataloader", "scan_path")
-mask_path = config.get("Dataloader","mask_path")
+mask_path = config.get("Dataloader", "mask_path")
 source_domain = config.get("Dataloader", "source_domain")
 target_domain = config.get("Dataloader", "target_domain")
 scan_type = config.get("Dataloader", "scan_type")
@@ -111,13 +112,13 @@ def train_model():
 
             scans = rearrange(scans, "b s c h w -> (b s) c h w")
             masks = rearrange(masks, "b s c h w -> (b s) c h w")
-            labels = rearrange(labels,"b s l->(b s) l")
+            labels = rearrange(labels, "b s l->(b s) l")
 
-            predicted_masks, unet_x3 = segmentor(scans)  # get predictions
-            s_loss = segmentor_loss(predicted_masks,masks)
+            predicted_masks, x3 = segmentor(scans)  # get predictions
+            s_loss = segmentor_loss(predicted_masks, masks)
 
-            unet_x3_detached = unet_x3.clone().detach()
-            predicted_labels = discriminator(unet_x3_detached)
+            x3_detached = x3.clone().detach()
+            predicted_labels = discriminator(x3_detached)
             d_loss = discriminator_loss(predicted_labels, labels)  # find loss
 
             total_loss = s_loss + d_loss
@@ -125,19 +126,27 @@ def train_model():
 
             total_loss.backward(retain_graph=True)
             optimizer.step()  # update weights
+            del predicted_labels,predicted_masks,x3, x3_detached, d_loss,s_loss, total_loss
+            gc.collect()
+
+
 
             # find indices of target domains
             discriminator_state_dict = copy.deepcopy(discriminator.state_dict())
-            target_indices = torch.where(labels==0)[0]
-            if target_indices.shape[0]>0:
+            target_indices = torch.where(labels == 0)[0]
+            if target_indices.shape[0] > 0:
+                optimizer.zero_grad(set_to_none=True)
+                torch.cuda.empty_cache()
                 adversarial_labels = torch.logical_not(labels).float()[target_indices]
-                target_unet_x3 = unet_x3[target_indices]
-                adversarial_predicted_labels = discriminator(target_unet_x3)
-                a_loss = adversarial_loss(adversarial_predicted_labels,adversarial_labels)
+                adversarial_scans = scans[target_indices]
+                mask_new, x3_new = segmentor(adversarial_scans)
+                adversarial_predicted_labels = discriminator(x3_new)
+                a_loss = adversarial_loss(adversarial_predicted_labels, adversarial_labels)
                 a_loss.backward()  # find gradients
                 optimizer.step()  # update weights
                 discriminator.load_state_dict(discriminator_state_dict)
-
+                del x3_new, mask_new, adversarial_predicted_labels,a_loss, discriminator_state_dict
+                gc.collect()
         #     progress_bar.set_description(f"Epoch {0 + epoch} Iter {i + 1}: loss {loss.item():.5f}. ")
         # print("Average Loss", np.mean(loss_list))
         # # update stats
@@ -192,12 +201,12 @@ def plot_results(source_domain, target_domain):
     plt.close()
 
 
-def show_accuracy_table(source_domain,target_domain,accuracy_dict):
-
+def show_accuracy_table(source_domain, target_domain, accuracy_dict):
     model = config.get("Classification", "model")
     model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
     model_dict = torch.load("../models/" + model_name + ".pth")
-    accuracy_dict[source_domain+"_"+target_domain] = [model_dict["stats"]["accuracy"][-1]]
+    accuracy_dict[source_domain + "_" + target_domain] = [model_dict["stats"]["accuracy"][-1]]
+
 
 # combinations = [["siemens", "ge"], ["siemens", "philips"],
 #                 ["ge", "siemens"], ["ge", "philips"],
