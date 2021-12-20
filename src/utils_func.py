@@ -35,6 +35,6 @@ def make_train_val_text(source_domain,target_domain,scan_type):
 
 
 source_domain = 'ge'
-target_domain = 'siemens'
+target_domain = 'phil'
 scan_type = '3'
 make_train_val_text(source_domain,target_domain,scan_type)

@@ -1,8 +1,11 @@
+import copy
+
 from torch import nn
 from dpipe.layers.resblock import ResBlock2d
 from dpipe.layers.conv import PreActivation2d
 import torch
 from torch.nn import functional as F
+import logging
 
 class UNet2D(nn.Module):
     def __init__(self, n_chans_in, n_chans_out, kernel_size=3, padding=1, pooling_size=2, n_filters_init=8,
@@ -96,8 +99,11 @@ class UNet2D(nn.Module):
         )
 
     def forward(self, x):
+        logging.info('x shape ' + str(x.shape))
         x0 = self.init_path(x)
+        logging.info('x0 shape ' + str(x.shape))
         x1 = self.down1(x0)
+        logging.info('x1 shape ' + str(x.shape))
         x2 = self.down2(x1)
         x3 = self.down3(x2)
 
@@ -106,10 +112,10 @@ class UNet2D(nn.Module):
         x0_up = self.up1(x1_up + self.shortcut1(x1))
         x_out = self.out_path(x0_up + self.shortcut0(x0))
 
-        return F.sigmoid(x_out)
+        return torch.sigmoid(x_out), x3
 
 #
-model = UNet2D(n_chans_in=1, n_chans_out=1)
-X = torch.rand(10, 1, 288, 288)
-y = model(X)
-print(y.shape)
+# model = UNet2D(n_chans_in=1, n_chans_out=1)
+# X = torch.rand(10, 1, 288, 288)
+# y = model(X)
+# print(y.shape)

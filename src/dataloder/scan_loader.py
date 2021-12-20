@@ -38,7 +38,7 @@ class ScanDataset(Dataset):
         self.source_domain = source_domain
         self.target_domain = target_domain
         # self.transform = transforms.Resize(288)
-        self.num_slices = 10
+        self.num_slices = 2
         self.max_pad = 288
         self.mode = mode
 
