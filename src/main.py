@@ -101,10 +101,15 @@ def train_model():
         "epoch": [],
         "train_loss": [],
         "valid_loss": [],
-        "accuracy": []
+        "accuracy": [],
+        "a_loss":[],
+        "s_loss":[],
+        "d_loss":[]
     }
     init_epoch = 0
     a_loss_hist = []
+    d_loss_hist = []
+    s_loss_hist = []
     for epoch in range(init_epoch, EPOCHS):  # iterate over epochs
         a_loss_list, d_loss_list, s_loss_list = [], [], []
         progress_bar = tqdm(enumerate(dataloader_train), total=len(dataloader_train))
@@ -156,10 +161,15 @@ def train_model():
         print("Average Segmentation Loss", np.mean(s_loss_list))
         print("Average Discrimination Loss", np.mean(d_loss_list))
         # update stats
-        # loss_hist.append(np.mean(loss_list))
-        # stats['epoch'].append(epoch)
-        # stats['a_loss'].append(loss_hist[-1])
-        #
+        a_loss_hist.append(np.mean(a_loss_list))
+        d_loss_hist.append(np.mean(d_loss_list))
+        s_loss_hist.append(np.mean(s_loss_list))
+
+        stats['epoch'].append(epoch)
+        stats['a_loss'].append(a_loss_hist[-1])
+        stats['s_loss'].append(s_loss_hist[-1])
+        stats['d_loss'].append(d_loss_hist[-1])
+
         # if epoch % EVAL_FREQ == 0:
         #     accuracy, valid_loss = eval_model(unet)
         #     print(f"Accuracy at epoch {epoch}: {round(accuracy, 2)}%")
@@ -167,9 +177,9 @@ def train_model():
         #     accuracy, valid_loss = -1, -1
         # stats["accuracy"].append(accuracy)
         # stats["valid_loss"].append(valid_loss)
-        # if epoch % SAVE_FREQ == 0:
-        #     model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
-        #     save_model(unet, stats, model_name)
+        if epoch % SAVE_FREQ == 0:
+            model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
+            save_model(discriminator,stats,  model_name)
 
 
 # train_model()
