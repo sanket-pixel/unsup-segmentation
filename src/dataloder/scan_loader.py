@@ -16,8 +16,9 @@ def make_filepath_list(mode, source_domain, target_domain, scan_path, mask_path)
     with open(filename_path, "r") as f:
         lines = f.read().split("\n")[:-1]
     scan_path = [os.path.join(scan_path, file) for file in lines]
-    mask_path = [os.path.join(mask_path, file.split(".nii")[0]+"_ss.nii.gz") for file in lines]
+    mask_path = [os.path.join(mask_path, file.split(".nii")[0] + "_ss.nii.gz") for file in lines]
     return scan_path, mask_path
+
 
 def get_transform(pad_size):
     pad = transforms.Pad(pad_size, fill=0, padding_mode="constant")
@@ -54,7 +55,7 @@ class ScanDataset(Dataset):
         scan_size = scan_tensor.shape[-1]
         max_across_slice_scan = scan_tensor.amax(dim=(1, 2)).unsqueeze(1).unsqueeze(1)
         normalized_scan = scan_tensor / max_across_slice_scan
-        transform = get_transform(int((self.max_pad - scan_size)/2))
+        transform = get_transform(int((self.max_pad - scan_size) / 2))
         scan = transform(normalized_scan)
         mask = transform(mask_tensor)
         total_slices = scan.shape[0]
@@ -68,7 +69,6 @@ class ScanDataset(Dataset):
         else:
             label = torch.zeros(self.num_slices, 1)
         return sliced_scan, sliced_mask, label
-
 
 # source_domain = "siemens"
 # target_domain = "philips"
