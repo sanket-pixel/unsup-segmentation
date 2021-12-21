@@ -33,25 +33,21 @@ class ScanDataset(Dataset):
         # load all nii handle in a list
         self.scan_path, self.mask_path = make_filepath_list(mode, source_domain,
                                                             target_domain, scan_path, mask_path)
-        self.scan_list = [nib.load(image_path) for image_path in self.scan_path]
-        self.mask_list = [nib.load(image_path) for image_path in self.mask_path]
         self.domain_list = [image_path.split("_")[1] for image_path in self.scan_path]
         self.source_domain = source_domain
         self.target_domain = target_domain
-        # self.transform = transforms.Resize(288)
         self.num_slices = 2
         self.max_pad = 288
         self.mode = mode
 
     def __len__(self):
-        return len(self.scan_list)
+        return len(self.scan_path)
 
     def __getitem__(self, idx):
-        scan_nii = self.scan_list[idx]
-        mask_nii = self.mask_list[idx]
+        scan_nii = nib.load(self.scan_path[idx])
+        mask_nii = nib.load(self.mask_path[idx])
         scan_tensor = torch.from_numpy(np.asarray(scan_nii.dataobj))
         mask_tensor = torch.from_numpy(np.asarray(mask_nii.dataobj))
-
         scan_size = scan_tensor.shape[-1]
         max_across_slice_scan = scan_tensor.amax(dim=(1, 2)).unsqueeze(1).unsqueeze(1)
         normalized_scan = scan_tensor / max_across_slice_scan
@@ -59,15 +55,23 @@ class ScanDataset(Dataset):
         scan = transform(normalized_scan)
         mask = transform(mask_tensor)
         total_slices = scan.shape[0]
-        slice_start_index = torch.randint(0, total_slices - self.num_slices, (1,))
-        sliced_scan = scan[slice_start_index:slice_start_index + self.num_slices]
-        sliced_mask = mask[slice_start_index:slice_start_index + self.num_slices]
-        sliced_scan = sliced_scan.unsqueeze(1)
-        sliced_mask = sliced_mask.unsqueeze(1)
-        if self.domain_list[idx] == self.source_domain:
-            label = torch.ones(self.num_slices, 1)
+        if self.mode=="validation":
+            sliced_scan = scan.unsqueeze(1)
+            sliced_mask = mask.unsqueeze(1)
+            if self.domain_list[idx] == self.source_domain:
+                label = torch.ones(total_slices, 1)
+            else:
+                label = torch.zeros(total_slices, 1)
         else:
-            label = torch.zeros(self.num_slices, 1)
+            slice_start_index = torch.randint(0, total_slices - self.num_slices, (1,))
+            sliced_scan = scan[slice_start_index:slice_start_index + self.num_slices]
+            sliced_mask = mask[slice_start_index:slice_start_index + self.num_slices]
+            sliced_scan = sliced_scan.unsqueeze(1)
+            sliced_mask = sliced_mask.unsqueeze(1)
+            if self.domain_list[idx] == self.source_domain:
+                label = torch.ones(self.num_slices, 1)
+            else:
+                label = torch.zeros(self.num_slices, 1)
         return sliced_scan, sliced_mask, label
 
 # source_domain = "siemens"

@@ -20,4 +20,18 @@ class DiceBCELoss(nn.Module):
 
         return Dice_BCE
 
-        # return Dice_BCE, BCE, dice_loss
+class DiceScore(nn.Module):
+    def __init__(self):
+        super(DiceScore, self).__init__()
+
+    def forward(self, inputs, targets, smooth=0.0000001):
+        # flatten label and prediction tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        intersection = (inputs * targets).sum()
+
+        dice_score = (2. * intersection + smooth) / (inputs.sum() + targets.sum() + smooth)
+
+        return dice_score
+
