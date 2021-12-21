@@ -143,8 +143,8 @@ def train_model():
     adversarial_loss = torch.nn.BCELoss().to(device)
 
     # params = list(discriminator.parameters()) + list(segmentor.parameters())
-    optimizer_a = torch.optim.Adam(params=discriminator.parameters(), lr=LR_a)  # define optimizer
-    optimizer_d = torch.optim.Adam(params=segmentor.parameters(), lr=LR_d)
+    optimizer_a = torch.optim.Adam(params=segmentor.parameters(), lr=LR_a)  # define optimizer
+    optimizer_d = torch.optim.Adam(params=discriminator.parameters(), lr=LR_d)
     optimizer_s = torch.optim.Adam(params=segmentor.parameters(), lr=LR_s)  # define optimizer
     stats = {
         "epoch": [],
@@ -246,10 +246,6 @@ def train_model():
             print(f"Accuracy at epoch {epoch}: {round(accuracy, 2)}%")
             print(f"Dice Score at epoch {epoch}: {round(dice_score_mean*100, 2)}%")
 
-        # else:
-        #     accuracy, valid_loss = -1, -1
-        # stats["accuracy"].append(accuracy)
-        # stats["valid_loss"].append(valid_loss)
         if epoch % SAVE_FREQ == 0:
             model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
             save_model(discriminator, stats, model_name)
