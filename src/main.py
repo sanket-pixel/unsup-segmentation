@@ -286,11 +286,11 @@ def plot_results(source_domain, target_domain):
     plt.close()
 
 
-def show_accuracy_table(source_domain, target_domain, accuracy_dict):
-    model = config.get("Classification", "model")
-    model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
-    model_dict = torch.load("../models/" + model_name + ".pth")
-    accuracy_dict[source_domain + "_" + target_domain] = [model_dict["stats"]["accuracy"][-1]]
+# def show_accuracy_table(source_domain, target_domain, accuracy_dict):
+#     model = config.get("Classification", "model")
+#     model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
+#     model_dict = torch.load("../models/" + model_name + ".pth")
+#     accuracy_dict[source_domain + "_" + target_domain] = [model_dict["stats"]["accuracy"][-1]]
 
 
 # combinations = [["siemens", "ge"], ["siemens", "philips"],
