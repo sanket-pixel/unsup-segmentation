@@ -65,9 +65,6 @@ def eval_model(segmentor, discriminator):
 
         target_indices = torch.where(labels == 0)[0]
 
-        scans = rearrange(scans, "b s c h w -> (b s) c h w")
-        masks = rearrange(masks, "b s c h w -> (b s) c h w")
-        labels = rearrange(labels, "b s l->(b s) l")
         scans_target = scans[target_indices]
         masks_target = masks[target_indices]
         labels_target = labels[target_indices]
@@ -152,10 +149,6 @@ def train_model():
             optimizer_d.zero_grad(set_to_none=True)  # remove old grads
             optimizer_s.zero_grad(set_to_none=True)
             optimizer_a.zero_grad(set_to_none=True)
-
-            scans = rearrange(scans, "b s c h w -> (b s) c h w")
-            masks = rearrange(masks, "b s c h w -> (b s) c h w")
-            labels = rearrange(labels, "b s l->(b s) l")
 
             # get segmentor loss only for source domains
             predicted_masks, x3 = segmentor(scans)  # get predictions
