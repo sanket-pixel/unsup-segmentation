@@ -33,46 +33,55 @@ class ScanDataset(Dataset):
         # load all nii handle in a list
         self.scan_path, self.mask_path = make_filepath_list(mode, source_domain,
                                                             target_domain, scan_path, mask_path)
+        self.scan_list = [nib.load(image_path) for image_path in self.scan_path]
+        self.mask_list = [nib.load(image_path) for image_path in self.mask_path]
         self.domain_list = [image_path.split("_")[1] for image_path in self.scan_path]
+
         self.source_domain = source_domain
         self.target_domain = target_domain
         self.num_slices = 2
         self.max_pad = 288
         self.mode = mode
+        self.scan_list_t, self.mask_list_t, self.label_list = self.transform_concat(self.scan_list, self.mask_list)
 
     def __len__(self):
         return len(self.scan_path)
 
+    def transform_concat(self, scan_list, mask_list):
+        scan_transformed_list = []
+        mask_transformed_list = []
+        label_list = []
+        for i, scan_nii in enumerate(scan_list):
+            scan_tensor = torch.from_numpy(np.asarray(scan_nii.dataobj))
+            mask_tensor = torch.from_numpy(np.asarray(mask_list[i].dataobj))
+            scan_size = torch.Tensor(list(scan_tensor.shape))
+            if scan_size[0] == scan_size[1]:
+                scan_tensor = scan_tensor.permute(2, 0, 1)
+                mask_tensor = mask_tensor.permute(2, 0, 1)
+            elif scan_size[0] == scan_size[2]:
+                scan_tensor = scan_tensor.permute(1, 0, 2)
+                mask_tensor = mask_tensor.permute(1, 0, 2)
+            scan_size = scan_tensor.shape[-1]
+            max_across_slice_scan = scan_tensor.amax(dim=(1, 2)).unsqueeze(1).unsqueeze(1)
+            normalized_scan = scan_tensor / max_across_slice_scan
+            transform = get_transform(int((self.max_pad - scan_size) / 2))
+            scan = transform(normalized_scan)
+            mask = transform(mask_tensor)
+            total_slices = scan_tensor.shape[0]
+            if self.domain_list[i] == self.source_domain:
+                label_list.append(torch.ones(total_slices, 1))
+            elif self.domain_list[i] == self.target_domain:
+                label_list.append(torch.zeros(total_slices, 1))
+            scan_transformed_list.append(scan)
+            mask_transformed_list.append(mask)
+
+        return torch.cat(scan_transformed_list, 0), torch.cat(mask_transformed_list, 0), torch.cat(label_list, 0)
+
     def __getitem__(self, idx):
-        scan_nii = nib.load(self.scan_path[idx])
-        mask_nii = nib.load(self.mask_path[idx])
-        scan_tensor = torch.from_numpy(np.asarray(scan_nii.dataobj))
-        mask_tensor = torch.from_numpy(np.asarray(mask_nii.dataobj))
-        scan_size = scan_tensor.shape[-1]
-        max_across_slice_scan = scan_tensor.amax(dim=(1, 2)).unsqueeze(1).unsqueeze(1)
-        normalized_scan = scan_tensor / max_across_slice_scan
-        transform = get_transform(int((self.max_pad - scan_size) / 2))
-        scan = transform(normalized_scan)
-        mask = transform(mask_tensor)
-        total_slices = scan.shape[0]
-        if self.mode=="validation":
-            sliced_scan = scan.unsqueeze(1)
-            sliced_mask = mask.unsqueeze(1)
-            if self.domain_list[idx] == self.source_domain:
-                label = torch.ones(total_slices, 1)
-            else:
-                label = torch.zeros(total_slices, 1)
-        else:
-            slice_start_index = torch.randint(0, total_slices - self.num_slices, (1,))
-            sliced_scan = scan[slice_start_index:slice_start_index + self.num_slices]
-            sliced_mask = mask[slice_start_index:slice_start_index + self.num_slices]
-            sliced_scan = sliced_scan.unsqueeze(1)
-            sliced_mask = sliced_mask.unsqueeze(1)
-            if self.domain_list[idx] == self.source_domain:
-                label = torch.ones(self.num_slices, 1)
-            else:
-                label = torch.zeros(self.num_slices, 1)
-        return sliced_scan, sliced_mask, label
+        scan = self.scan_list_t[idx]
+        mask = self.mask_list_t[idx]
+        label = self.label_list[idx]
+        return scan, mask, label
 
 # source_domain = "siemens"
 # target_domain = "philips"
