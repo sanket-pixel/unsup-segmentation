@@ -8,16 +8,26 @@ import numpy as np
 import os
 from tqdm import tqdm
 import cv2 as cv
+import configparser
+
+os.chdir(os.path.join(".."))
+config = configparser.ConfigParser()
+config.read(os.path.join("src", "configs", "scan_seg.config"))
+scan_path = config.get("Dataloader", "scan_path")
+mask_path = config.get("Dataloader", "mask_path")
+source_domain = config.get("Dataloader", "source_domain")
+target_domain = config.get("Dataloader", "target_domain")
+scan_type = config.get("Dataloader", "scan_type")
+batch_size_train = config.getint("Dataloader", "batch_size_train")
+batch_size_eval = config.getint("Dataloader", "batch_size_eval")
 
 
-def make_filepath_list(mode, source_domain, target_domain, scan_path, mask_path):
+def get_scan_list(mode, source_domain, target_domain):
     folder_name = source_domain + "_" + target_domain
-    filename_path = os.path.join("..", "data", folder_name, mode + ".txt")
+    filename_path = os.path.join("data", folder_name, mode + ".txt")
     with open(filename_path, "r") as f:
         lines = f.read().split("\n")[:-1]
-    scan_path = [os.path.join(scan_path, file) for file in lines]
-    mask_path = [os.path.join(mask_path, file.split(".nii")[0] + "_ss.nii.gz") for file in lines]
-    return scan_path, mask_path
+    return lines
 
 
 def get_transform(pad_size):
@@ -27,73 +37,39 @@ def get_transform(pad_size):
     return transforms.Compose([pad])
 
 
-class ScanDataset(Dataset):
-    def __init__(self, source_domain, target_domain, scan_path, mask_path,
-                 scan_type, mode):
-        # load all nii handle in a list
-        self.scan_path, self.mask_path = make_filepath_list(mode, source_domain,
-                                                            target_domain, scan_path, mask_path)
-        self.scan_list = [nib.load(image_path) for image_path in self.scan_path]
-        self.mask_list = [nib.load(image_path) for image_path in self.mask_path]
-        self.domain_list = [image_path.split("_")[1] for image_path in self.scan_path]
+def read_nib(nib_path, nib_name):
+    nii = nib.load(os.path.join(nib_path, nib_name))
+    tensor = torch.from_numpy(np.asarray(nii.dataobj))
+    return tensor
 
+
+class ScanDataset(Dataset):
+    def __init__(self, mode):
+        # load all nii handle in a list
+        self.scan_list = get_scan_list(mode, source_domain, target_domain)
         self.source_domain = source_domain
         self.target_domain = target_domain
-        self.num_slices = 2
         self.max_pad = 288
         self.mode = mode
-        self.scan_list_t, self.mask_list_t, self.label_list = self.transform_concat(self.scan_list, self.mask_list)
 
     def __len__(self):
-        return len(self.scan_path)
-
-    def transform_concat(self, scan_list, mask_list):
-        scan_transformed_list = []
-        mask_transformed_list = []
-        label_list = []
-        for i, scan_nii in enumerate(scan_list):
-            scan_tensor = torch.from_numpy(np.asarray(scan_nii.dataobj))
-            mask_tensor = torch.from_numpy(np.asarray(mask_list[i].dataobj))
-            scan_size = torch.Tensor(list(scan_tensor.shape))
-            if scan_size[0] == scan_size[1]:
-                scan_tensor = scan_tensor.permute(2, 0, 1)
-                mask_tensor = mask_tensor.permute(2, 0, 1)
-            elif scan_size[0] == scan_size[2]:
-                scan_tensor = scan_tensor.permute(1, 0, 2)
-                mask_tensor = mask_tensor.permute(1, 0, 2)
-            scan_size = scan_tensor.shape[-1]
-            max_across_slice_scan = scan_tensor.amax(dim=(1, 2)).unsqueeze(1).unsqueeze(1)
-            normalized_scan = scan_tensor / max_across_slice_scan
-            transform = get_transform(int((self.max_pad - scan_size) / 2))
-            scan = transform(normalized_scan)
-            mask = transform(mask_tensor)
-            total_slices = scan_tensor.shape[0]
-            if self.domain_list[i] == self.source_domain:
-                label_list.append(torch.ones(total_slices, 1))
-            elif self.domain_list[i] == self.target_domain:
-                label_list.append(torch.zeros(total_slices, 1))
-            scan_transformed_list.append(scan)
-            mask_transformed_list.append(mask)
-
-        return torch.cat(scan_transformed_list, 0), torch.cat(mask_transformed_list, 0), torch.cat(label_list, 0)
+        return len(self.scan_list)
 
     def __getitem__(self, idx):
-        scan = self.scan_list_t[idx]
-        mask = self.mask_list_t[idx]
-        label = self.label_list[idx]
+        scan_text = self.scan_list[idx]
+        slice_id = int(scan_text.split(",")[-1])
+        domain_name = scan_text.split("_")[1]
+        scan_name = scan_text.split(",")[0]
+        mask_name = scan_name.split(".nii")[0] + "_ss.nii.gz"
+        scan = read_nib(scan_path, scan_name)[slice_id]
+        mask = read_nib(mask_path, mask_name)[slice_id]
+        scan_size = scan.shape[-1]
+        normalized_scan = scan / scan.max()
+        transform = get_transform(int((self.max_pad - scan_size) / 2))
+        scan = transform(normalized_scan)
+        mask = transform(mask)
+        if domain_name == source_domain:
+            label = 0
+        elif domain_name == target_domain:
+            label = 1
         return scan, mask, label
-
-# source_domain = "siemens"
-# target_domain = "philips"
-# scan_path = "../../data/Original/Original"
-# mask_path = "../../data/Silver-standard-machine-learning/Silver-standard"
-# scan_type = "3"
-# scan_dataset_train = ScanDataset(source_domain, target_domain,
-#                                  scan_path,mask_path, scan_type, "training")
-# dataloader_train = DataLoader(scan_dataset_train, batch_size=8, shuffle=True)
-#
-# for batch in dataloader_train:
-#     print(batch[0].shape)
-#     print(batch[1].shape)
-#     print(batch[2].shape)
-#     break
