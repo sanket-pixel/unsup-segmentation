@@ -66,10 +66,10 @@ class ScanDataset(Dataset):
         scan_size = scan.shape[-1]
         normalized_scan = scan / scan.max()
         transform = get_transform(int((self.max_pad - scan_size) / 2))
-        scan = transform(normalized_scan)
-        mask = transform(mask)
+        scan = transform(normalized_scan).unsqueeze(0)
+        mask = transform(mask).unsqueeze(0)
         if domain_name == source_domain:
-            label = 0
+            label = torch.tensor([0])
         elif domain_name == target_domain:
-            label = 1
+            label = torch.tensor([1])
         return scan, mask, label
