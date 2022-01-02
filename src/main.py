@@ -105,7 +105,7 @@ def eval_model(segmentor, discriminator):
     d_loss_mean = np.mean(d_loss_list)
     s_loss_source_mean = np.mean(s_loss_list_source)
     s_loss_target_mean = np.mean(s_loss_list_target)
-    dice_score_source_mean = np.mean(dice_score_source_list)
+    dice_score_source_mean = np.mean( )
     dice_score_target_mean = np.mean(dice_score_target_list)
     return accuracy, d_loss_mean, dice_score_source_mean, dice_score_target_mean, s_loss_source_mean, s_loss_target_mean
 
@@ -240,10 +240,7 @@ def train_model():
             save_model(discriminator, stats, model_name)
 
 
-# train_model()
-# unet = torch.load("/home/sanket/Desktop/Projects/unsup-segmentation/models/Unet_without_adverserial.pth")
-# model = unet['model'].eval()
-# eval_model(model)
+
 
 def plot_results(source_domain, target_domain):
     model = config.get("Classification", "model")
@@ -256,7 +253,7 @@ def plot_results(source_domain, target_domain):
     plt.xlabel('Epoch', fontsize=12)
     plt.ylabel('Loss', fontsize=12)
     folder_name = source_domain + "_" + target_domain
-    folder_path = os.path.join("..", "figures", folder_name)
+    folder_path = os.path.join( "figures", folder_name)
     Path(folder_path).mkdir(parents=True, exist_ok=True)
     loss_path = os.path.join(folder_path, "training_loss.jpg")
     plt.legend()
@@ -266,12 +263,13 @@ def plot_results(source_domain, target_domain):
     plt.close()
 
     plt.plot(model_dict["stats"]["valid_d_loss"], label="Validation Discrimination Loss")
-    plt.plot(model_dict["stats"]["valid_s_loss"], label="Validation Segmentation Loss")
+    plt.plot(model_dict["stats"]["valid_s_loss_source"], label="Validation Segmentation Loss Source")
+    plt.plot(model_dict["stats"]["valid_s_loss_target"], label="Validation Segmentation Loss Target")
     plt.suptitle(source_domain + " : " + target_domain + " Validation Loss", fontsize=15)
     plt.xlabel('Epoch', fontsize=12)
     plt.ylabel('Loss', fontsize=12)
     folder_name = source_domain + "_" + target_domain
-    folder_path = os.path.join("..", "figures", folder_name)
+    folder_path = os.path.join("figures", folder_name)
     Path(folder_path).mkdir(parents=True, exist_ok=True)
     loss_path = os.path.join(folder_path, "validation_loss.jpg")
     plt.legend()
@@ -280,12 +278,13 @@ def plot_results(source_domain, target_domain):
     plt.cla()
     plt.close()
 
-    plt.plot(model_dict["stats"]["target_dice_score"], label="Target Dice Score")
+    plt.plot(model_dict["stats"]["dice_score_source"], label="Source Dice Score")
+    plt.plot(model_dict["stats"]["dice_score_target"], label="Target Dice Score")
     plt.suptitle(source_domain + " : " + target_domain + " Target Dice Score", fontsize=15)
     plt.xlabel('Epoch', fontsize=12)
     plt.ylabel('Dice Score', fontsize=12)
     folder_name = source_domain + "_" + target_domain
-    folder_path = os.path.join("..", "figures", folder_name)
+    folder_path = os.path.join("figures", folder_name)
     Path(folder_path).mkdir(parents=True, exist_ok=True)
     loss_path = os.path.join(folder_path, "target_dice_score.jpg")
     plt.legend()
@@ -323,5 +322,5 @@ def plot_results(source_domain, target_domain):
 # for c in combinations:
 #     show_accuracy_table(c[0], c[1],accuracy_dict)
 # print(pd.DataFrame(accuracy_dict).transpose())
-# plot_results("ge", "philips")
-train_model()
+plot_results("ge", "philips")
+# train_model()
