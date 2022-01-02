@@ -32,8 +32,8 @@ batch_size_eval = config.getint("Dataloader", "batch_size_eval")
 scan_dataset_train = ScanDataset("training")
 scan_dataset_eval = ScanDataset("validation")
 
-dataloader_train = DataLoader(scan_dataset_train, batch_size=batch_size_train, shuffle=True, num_workers=4)
-dataloader_eval = DataLoader(scan_dataset_eval, batch_size=batch_size_train, shuffle=False, num_workers=4)
+dataloader_train = DataLoader(scan_dataset_train, batch_size=batch_size_train, shuffle=True, num_workers=16)
+dataloader_eval = DataLoader(scan_dataset_eval, batch_size=batch_size_train, shuffle=False, num_workers=16)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -49,53 +49,65 @@ def eval_model(segmentor, discriminator):
     correct = 0
     total = 0
     d_loss_list = []
-    s_loss_list = []
+    s_loss_list_source = []
+    s_loss_list_target = []
     label_list = []
-    dice_score_list = []
-
+    dice_score_source_list = []
+    dice_score_target_list = []
     segmentor_loss = DiceBCELoss().to(device)
     discriminator_loss = torch.nn.BCELoss().to(device)
     dice_score_func = DiceScore().to(device)
 
     # model = model.eval()
-    for batch in dataloader_eval:
+    progress_bar = tqdm(enumerate(dataloader_eval), total=len(dataloader_eval))
+    for i, batch in progress_bar:
         scans = batch[0].float().to(device)
         masks = batch[1].float().to(device)
         labels = batch[2].float().to(device)
 
         target_indices = torch.where(labels == 0)[0]
-
-        scans_target = scans[target_indices]
-        masks_target = masks[target_indices]
-        labels_target = labels[target_indices]
-        predicted_mask, x3 = segmentor(scans_target)
+        source_indices = torch.where(labels == 1)[0]
+        predicted_mask, x3 = segmentor(scans)
         predicted_mask[predicted_mask <= 0.5] = 0
         predicted_mask[predicted_mask > 0.5] = 1
+
+        if target_indices.shape[0] > 0:
+            masks_target = masks[target_indices]
+            prediced_target_masks = masks[target_indices]
+            # get dice score
+            dice_score_target = dice_score_func(prediced_target_masks, masks_target)
+            dice_score_target_list.append(dice_score_target.item())
+            s_loss_target = segmentor_loss(prediced_target_masks, masks_target)
+            s_loss_list_target.append(s_loss_target.item())
+
+        if source_indices.shape[0] > 0:
+            masks_source = masks[source_indices]
+            predicted_source_masks = masks[source_indices]
+            # get dice score
+            dice_score_source = dice_score_func(predicted_source_masks, masks_source)
+            dice_score_source_list.append(dice_score_source.item())
+            s_loss_source = segmentor_loss(predicted_source_masks, masks_source)
+            s_loss_list_source.append(s_loss_source.item())
+
         predicted_label = discriminator(x3)
-        prediction = torch.zeros_like(labels_target)
+        prediction = torch.zeros_like(labels)
         prediction[torch.where(predicted_label >= 0.5)] = 1
-        d_loss = discriminator_loss(predicted_label, labels_target)
+        d_loss = discriminator_loss(predicted_label, labels)
         d_loss_list.append(d_loss.item())
-        # get dice score
-        dice_score = dice_score_func(predicted_mask, masks_target)
-        dice_score_list.append(dice_score.item())
-        s_loss = segmentor_loss(predicted_mask, masks_target)
-        s_loss_list.append(s_loss.item())
+
         # Get predictions from the maximum value
-        correct += len(torch.where(labels_target == prediction)[0])
-        total += len(labels_target)
-
-
-
+        correct += len(torch.where(labels == prediction)[0])
+        total += len(labels)
 
 
     # Total correct predictions and loss
     accuracy = correct / total * 100
     d_loss_mean = np.mean(d_loss_list)
-    s_loss_mean = np.mean(s_loss_list)
-    dice_score_mean = np.mean(dice_score_list)
-
-    return accuracy, dice_score_mean, d_loss_mean, s_loss_mean
+    s_loss_source_mean = np.mean(s_loss_list_source)
+    s_loss_target_mean = np.mean(s_loss_list_target)
+    dice_score_source_mean = np.mean(dice_score_source_list)
+    dice_score_target_mean = np.mean(dice_score_target_list)
+    return accuracy, d_loss_mean, dice_score_source_mean, dice_score_target_mean, s_loss_source_mean, s_loss_target_mean
 
 
 def train_model():
@@ -106,7 +118,7 @@ def train_model():
     EVAL_FREQ = config.getint("Classification", "EVAL_FREQ")
     SAVE_FREQ = config.getint("Classification", "SAVE_FREQ")
     model = config.get("Classification", "model")
-    segmentor_path = os.path.join("models","ge3_updateddata_train70_25epochs_combinedloss.pkl")
+    segmentor_path = os.path.join("models", "ge3_updateddata_train70_25epochs_combinedloss.pkl")
     # initialize model
     # for using with optical flow change modality to "optical_flow"
     segmentor = torch.load(segmentor_path)
@@ -117,19 +129,20 @@ def train_model():
     adversarial_loss = torch.nn.BCELoss().to(device)
 
     # params = list(discriminator.parameters()) + list(segmentor.parameters())
-    optimizer_a = torch.optim.Adam(params=segmentor.parameters(), lr=LR_a)  # define optimizer
     optimizer_d = torch.optim.Adam(params=discriminator.parameters(), lr=LR_d)
     optimizer_s = torch.optim.Adam(params=segmentor.parameters(), lr=LR_s)  # define optimizer
+    # accuracy, d_loss_mean, dice_score_source_mean, dice_score_target_mean, s_loss_source_mean, s_loss_target_mean
     stats = {
         "epoch": [],
-        "train_loss": [],
-        "valid_d_loss": [],
-        "valid_s_loss":[],
-        "accuracy": [],
         "a_loss": [],
         "s_loss": [],
         "d_loss": [],
-        "target_dice_score" :[]
+        "valid_d_loss": [],
+        "accuracy": [],
+        "dice_score_source": [],
+        "dice_score_target": [],
+        "valid_s_loss_source": [],
+        "valid_s_loss_target": []
     }
     init_epoch = 0
     a_loss_hist = []
@@ -146,13 +159,12 @@ def train_model():
             target_indices = torch.where(labels == 0)[0]
             source_indices = torch.where(labels == 1)[0]
 
-            optimizer_d.zero_grad(set_to_none=True)  # remove old grads
-            optimizer_s.zero_grad(set_to_none=True)
-            optimizer_a.zero_grad(set_to_none=True)
+            optimizer_d.zero_grad()  # remove old grads
+            optimizer_s.zero_grad()
 
             # get segmentor loss only for source domains
             predicted_masks, x3 = segmentor(scans)  # get predictions
-            if target_indices.shape[0] > 0:
+            if source_indices.shape[0] > 0:
                 predicted_masks_source = predicted_masks[source_indices]
                 mask_source = masks[source_indices]
                 s_loss = segmentor_loss(predicted_masks_source, mask_source)
@@ -178,12 +190,9 @@ def train_model():
             else:
                 a_loss = torch.Tensor([0]).to(device)
                 a_loss.requires_grad = True
-
-            # update segementor with adversarial and segementor loss
-            a_loss.backward(retain_graph=True)
-            s_loss.backward()
-            optimizer_s.step()  # update weights
-            optimizer_a.step()
+            total_seg_loss = s_loss + a_loss
+            total_seg_loss.backward()
+            optimizer_s.step()
 
             # update loss lists
             a_loss_list.append(a_loss.item())
@@ -208,14 +217,24 @@ def train_model():
         stats['d_loss'].append(d_loss_hist[-1])
 
         if epoch % EVAL_FREQ == 0:
-            accuracy, dice_score_mean, d_loss_mean, s_loss_mean = eval_model(segmentor, discriminator)
-            stats["target_dice_score"].append(dice_score_mean*100)
+            # accuracy, d_loss_mean, dice_score_source_mean, dice_score_target_mean, s_loss_source_mean, s_loss_target_mean
+            '''
+            "dice_score_source": [],
+        "dice_score_target":[],
+        "valid_s_loss_source":[],
+        "valid_s_loss_target":[]
+            '''
+            accuracy, d_loss_mean, dice_score_source_mean, dice_score_target_mean, \
+            s_loss_source_mean, s_loss_target_mean = eval_model(segmentor, discriminator)
+            stats["dice_score_source"].append(dice_score_source_mean * 100)
+            stats["dice_score_target"].append(dice_score_target_mean * 100)
             stats["accuracy"].append(accuracy)
             stats["valid_d_loss"].append(d_loss_mean)
-            stats["valid_s_loss"].append(s_loss_mean)
+            stats["valid_s_loss_source"].append(s_loss_target_mean)
+            stats["valid_s_loss_target"].append(s_loss_target_mean)
             print(f"Accuracy at epoch {epoch}: {round(accuracy, 2)}%")
-            print(f"Dice Score at epoch {epoch}: {round(dice_score_mean*100, 2)}%")
-
+            print(f"Dice Score Source at epoch {epoch}: {round(dice_score_source_mean * 100, 2)}%")
+            print(f"Dice Score Target at epoch {epoch}: {round(dice_score_target_mean * 100, 2)}%")
         if epoch % SAVE_FREQ == 0:
             model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
             save_model(discriminator, stats, model_name)
