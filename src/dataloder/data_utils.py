@@ -11,7 +11,7 @@ import numpy as np
 os.chdir(os.path.join("..", ".."))
 
 config = configparser.ConfigParser()
-config.read(os.path.join("src", "configs", "scan_seg.config"))
+config.read(os.path.join("src", "configs", "experiment.config"))
 scan_path = config.get("Dataloader", "scan_path")
 mask_path = config.get("Dataloader", "mask_path")
 source_domain = config.get("Dataloader", "source_domain")
