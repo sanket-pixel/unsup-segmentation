@@ -1,0 +1,4 @@
+Pre-trained seg and pre-trained disc with lower learning rate 
+Disc lr: 1e-4 
+Seg lr: 1e-5 
+Trained for 7 epochs
