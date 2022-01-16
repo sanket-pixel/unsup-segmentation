@@ -12,7 +12,7 @@ import configparser
 
 os.chdir(os.path.join(".."))
 config = configparser.ConfigParser()
-config.read(os.path.join("src", "configs", "scan_seg.config"))
+config.read(os.path.join("src", "configs", "experiment.config"))
 scan_path = config.get("Dataloader", "scan_path")
 mask_path = config.get("Dataloader", "mask_path")
 source_domain = config.get("Dataloader", "source_domain")
@@ -27,7 +27,7 @@ def get_scan_list(mode, source_domain, target_domain):
     filename_path = os.path.join("data", folder_name, mode + ".txt")
     with open(filename_path, "r") as f:
         lines = f.read().split("\n")[:-1]
-    return lines
+    return np.array(lines)
 
 
 def get_transform(pad_size):
@@ -44,9 +44,11 @@ def read_nib(nib_path, nib_name):
 
 
 class ScanDataset(Dataset):
-    def __init__(self, mode):
+    def __init__(self, mode, scan_idx=None):
         # load all nii handle in a list
         self.scan_list = get_scan_list(mode, source_domain, target_domain)
+        if mode == "validation":
+            self.scan_list = self.scan_list[scan_idx]
         self.source_domain = source_domain
         self.target_domain = target_domain
         self.max_pad = 288
@@ -56,18 +58,29 @@ class ScanDataset(Dataset):
         return len(self.scan_list)
 
     def __getitem__(self, idx):
+        # get name of the scan text file
         scan_text = self.scan_list[idx]
+        # get slice id
         slice_id = int(scan_text.split(",")[-1])
+        # get domain name of scan
         domain_name = scan_text.split("_")[1]
+        # get full scan name
         scan_name = scan_text.split(",")[0]
+        # get mask filename
         mask_name = scan_name.split(".nii")[0] + "_ss.nii.gz"
+        # read mask and scan
         scan = read_nib(scan_path, scan_name)[slice_id]
         mask = read_nib(mask_path, mask_name)[slice_id]
+        # get size of scan
         scan_size = scan.shape[-1]
+        # normalize scan
         normalized_scan = scan / scan.max()
+        # get transform
         transform = get_transform(int((self.max_pad - scan_size) / 2))
+        # apply transform for scan and mask
         scan = transform(normalized_scan).unsqueeze(0)
         mask = transform(mask).unsqueeze(0)
+        # get label for scan
         if domain_name == source_domain:
             label = torch.tensor([0])
         elif domain_name == target_domain:
