@@ -1,5 +1,4 @@
 import copy
-
 from torch import nn
 from dpipe.layers.resblock import ResBlock2d
 from dpipe.layers.conv import PreActivation2d
@@ -100,8 +99,6 @@ class UNet2D(nn.Module):
 
     def forward(self, x):
         x0 = self.init_path(x)
-        del x
-        gc.collect()
         x1 = self.down1(x0)
         x2 = self.down2(x1)
         x3 = self.down3(x2)

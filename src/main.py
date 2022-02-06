@@ -18,7 +18,6 @@ import surface_distance.metrics as surf_dst
 import cv2
 import json
 
-print(torch.__version__)
 torch.autograd.set_detect_anomaly(True)
 
 config = configparser.ConfigParser()
@@ -49,7 +48,6 @@ def save_config():
     return "experiment_" + str(exp_id)
 
 
-
 def save_model(model, stats, exp):
     model_dict = {"model": model, "stats": stats}
     torch.save(model_dict, "models/" + exp + ".pth")
@@ -64,7 +62,7 @@ def save_sdat(sdat_scanwise, epoch, exp):
         json.dump(sdat_scanwise, fp)
 
 
-def save_scan(scan_list, mask_list, predicted_mask_list, scan_id, epoch,exp):
+def save_scan(scan_list, mask_list, predicted_mask_list, scan_id, epoch, exp):
     slice_id = 0
     for i, scan in enumerate(scan_list):
         mask = mask_list[i]
@@ -106,7 +104,7 @@ def eval_model(segmentor, discriminator, epoch, exp):
     sdat_target_list = []
     hd_source_list = []
     hd_target_list = []
-    sdat_scanwise = {"source":[], "target":[]}
+    sdat_scanwise = {"source": [], "target": []}
     segmentor_loss = DiceBCELoss().to(device)
     discriminator_loss = torch.nn.BCELoss().to(device)
     dice_score_func = DiceScore().to(device)
@@ -169,7 +167,7 @@ def eval_model(segmentor, discriminator, epoch, exp):
             score_source_list.append(score)
             sdat_source_list.append(sdat)
             hd_source_list.append(hd)
-            sdat_scanwise["source"].append({scan_id:sdat})
+            sdat_scanwise["source"].append({scan_id: sdat})
         else:
             score_target_list.append(score)
             sdat_target_list.append(sdat)
@@ -222,10 +220,11 @@ def train_model():
     lamda = config.getfloat("Classification", "lamda")
     model = config.get("Classification", "model")
     segmentor_path = os.path.join("models", "ge3_updateddata_train70_25epochs_combinedloss.pkl")
+    discriminator_path = os.path.join("models","discriminator.pth")
     # initialize model
     # for using with optical flow change modality to "optical_flow"
     segmentor = torch.load(segmentor_path)
-    discriminator = Discriminator().to(device)
+    discriminator = torch.load(discriminator_path)
 
     segmentor_loss = DiceBCELoss().to(device)
     discriminator_loss = torch.nn.BCELoss().to(device)  # cross entropy loss
@@ -258,6 +257,81 @@ def train_model():
     d_loss_hist = []
     s_loss_hist = []
     for epoch in range(init_epoch, EPOCHS):  # iterate over epochs
+
+        a_loss_list, d_loss_list, s_loss_list = [], [], []
+        progress_bar = tqdm(enumerate(dataloader_train), total=len(dataloader_train))
+        for i, batch in progress_bar:  # iterate over batches
+            scans = batch[0].float().to(device)
+            masks = batch[1].float().to(device)
+            labels = batch[2].float().to(device)
+
+            target_indices = torch.where(labels == 0)[0]
+            source_indices = torch.where(labels == 1)[0]
+
+            optimizer_d.zero_grad()  # remove old grads
+            optimizer_s.zero_grad()
+
+            # get segmentor loss only for source domains
+            predicted_masks, x3 = segmentor(scans)  # get predictions
+            # get discriminator loss for source and target
+            x3_detached = x3.clone().detach()
+            predicted_labels = discriminator(x3_detached)
+            d_loss = discriminator_loss(predicted_labels, labels)  # find loss
+            # update discriminator with discriminator loss
+            d_loss.backward()
+            optimizer_d.step()
+
+            # predicted_masks, x3 = segmentor(scans)
+            if source_indices.shape[0] > 0:
+                predicted_masks_source = predicted_masks[source_indices]
+                mask_source = masks[source_indices]
+                s_loss = segmentor_loss(predicted_masks_source, mask_source)
+                if target_indices.shape[0] > 0:
+                    adversarial_x3 = x3[target_indices]
+                    adversarial_labels = torch.logical_not(labels).float()[target_indices]
+                    adversarial_predicted_labels = discriminator(adversarial_x3)
+                    a_loss = adversarial_loss(adversarial_predicted_labels, adversarial_labels)
+                    total_seg_loss = s_loss + lamda*a_loss
+                else:
+                    total_seg_loss = s_loss
+            else:
+                if target_indices.shape[0] > 0:
+                    adversarial_x3 = x3[target_indices]
+                    adversarial_labels = torch.logical_not(labels).float()[target_indices]
+                    adversarial_predicted_labels = discriminator(adversarial_x3)
+                    a_loss = adversarial_loss(adversarial_predicted_labels, adversarial_labels)
+                    total_seg_loss = lamda * a_loss
+
+            total_seg_loss.backward()
+            optimizer_s.step()
+
+            # update loss lists
+            try:
+                a_loss_list.append(a_loss.item())
+                d_loss_list.append(d_loss.item())
+                s_loss_list.append(s_loss.item())
+            except:
+                pass
+            gc.collect()
+            torch.cuda.empty_cache()
+            try:
+                progress_bar.set_description(f"Epoch {0 + epoch} Iter {i + 1}: adv loss {a_loss.item():.5f}. ")
+                del predicted_labels, predicted_masks, x3, d_loss, s_loss, a_loss
+            except:
+                pass
+
+        print("Average Adversarial Loss", np.mean(a_loss_list))
+        print("Average Segmentation Loss", np.mean(s_loss_list))
+        print("Average Discrimination Loss", np.mean(d_loss_list))
+        # update stats
+        a_loss_hist.append(np.mean(a_loss_list))
+        d_loss_hist.append(np.mean(d_loss_list))
+        s_loss_hist.append(np.mean(s_loss_list))
+
+        stats['epoch'].append(epoch)
+        stats['a_loss'].append(a_loss_hist[-1])
+        stats['s_loss'].append(s_loss_hist[-1])
+        stats['d_loss'].append(d_loss_hist[-1])
         if epoch % EVAL_FREQ == 0:
             ev_d = eval_model(segmentor, discriminator, epoch, exp_id)
             stats["dice_score_source"].append(ev_d["dice_score_source"] * 100)
@@ -275,142 +349,74 @@ def train_model():
             print(f"Accuracy at epoch {epoch}: {round(ev_d['accuracy'], 2)}%")
             print(f"SDAT Score Source at epoch {epoch}: {round(ev_d['sdat_source'] * 100, 2)}%")
             print(f"SDAT Score Target at epoch {epoch}: {round(ev_d['sdat_target'] * 100, 2)}%")
-        a_loss_list, d_loss_list, s_loss_list = [], [], []
-        progress_bar = tqdm(enumerate(dataloader_train), total=len(dataloader_train))
-        for i, batch in progress_bar:  # iterate over batches
-            scans = batch[0].float().to(device)
-            masks = batch[1].float().to(device)
-            labels = batch[2].float().to(device)
-
-            target_indices = torch.where(labels == 0)[0]
-            source_indices = torch.where(labels == 1)[0]
-
-            optimizer_d.zero_grad()  # remove old grads
-            optimizer_s.zero_grad()
-
-            # get segmentor loss only for source domains
-            predicted_masks, x3 = segmentor(scans)  # get predictions
-            if source_indices.shape[0] > 0:
-                predicted_masks_source = predicted_masks[source_indices]
-                mask_source = masks[source_indices]
-                s_loss = segmentor_loss(predicted_masks_source, mask_source)
-            else:
-                s_loss = torch.Tensor([0]).to(device)
-                s_loss.requires_grad = True
-
-            # get discriminator loss for source and target
-            x3_detached = x3.clone().detach()
-            predicted_labels = discriminator(x3_detached)
-            d_loss = discriminator_loss(predicted_labels, labels)  # find loss
-
-            # update discriminator with discriminator loss
-            d_loss.backward(retain_graph=True)
-            optimizer_d.step()
-
-            # get adversarial loss only for target domain
-            if target_indices.shape[0] > 0:
-                adversarial_x3 = x3[target_indices]
-                adversarial_labels = torch.logical_not(labels).float()[target_indices]
-                adversarial_predicted_labels = discriminator(adversarial_x3)
-                a_loss = adversarial_loss(adversarial_predicted_labels, adversarial_labels)
-            else:
-                a_loss = torch.Tensor([0]).to(device)
-                a_loss.requires_grad = True
-            total_seg_loss = s_loss + a_loss
-            total_seg_loss.backward()
-            optimizer_s.step()
-
-            # update loss lists
-            a_loss_list.append(a_loss.item())
-            d_loss_list.append(d_loss.item())
-            s_loss_list.append(s_loss.item())
-            gc.collect()
-            torch.cuda.empty_cache()
-            progress_bar.set_description(f"Epoch {0 + epoch} Iter {i + 1}: adv loss {a_loss.item():.5f}. ")
-            del predicted_labels, predicted_masks, x3, d_loss, s_loss, a_loss
-
-        print("Average Adversarial Loss", np.mean(a_loss_list))
-        print("Average Segmentation Loss", np.mean(s_loss_list))
-        print("Average Discrimination Loss", np.mean(d_loss_list))
-        # update stats
-        a_loss_hist.append(np.mean(a_loss_list))
-        d_loss_hist.append(np.mean(d_loss_list))
-        s_loss_hist.append(np.mean(s_loss_list))
-
-        stats['epoch'].append(epoch)
-        stats['a_loss'].append(a_loss_hist[-1])
-        stats['s_loss'].append(s_loss_hist[-1])
-        stats['d_loss'].append(d_loss_hist[-1])
-
         if epoch % SAVE_FREQ == 0:
             save_model([segmentor, discriminator], stats, exp_id)
 
 
 def plot_results(source_domain, target_domain):
     model = config.get("Classification", "model")
-    model_name = model + "_" + source_domain + "_" + target_domain + "_" + scan_type + ".pth"
-    model_dict = torch.load("models/" + model_name + ".pth")
-    plt.plot(model_dict["stats"]["s_loss"], label="Segmentation Loss")
-    plt.plot(model_dict["stats"]["a_loss"], label="Adversarial Loss")
-    plt.plot(model_dict["stats"]["d_loss"], label="Discriminator Loss")
-    plt.suptitle(source_domain + " : " + target_domain + " Training Loss", fontsize=15)
+    model_name = model + ".pth"
+    model_dict = torch.load("models/" + model_name)
+    plt.plot(model_dict["stats"]["sdat_source"], label="SDAT Source")
+    plt.plot(model_dict["stats"]["sdat_target"], label="SDAT Target")
+    # plt.plot(model_dict["stats"]["d_loss"], label="Discriminator Loss")
+    plt.suptitle(source_domain + " : " + target_domain + " SDAT Score", fontsize=15)
     plt.xlabel('Epoch', fontsize=12)
     plt.ylabel('Loss', fontsize=12)
     folder_name = source_domain + "_" + target_domain
     folder_path = os.path.join("figures", folder_name)
     Path(folder_path).mkdir(parents=True, exist_ok=True)
-    loss_path = os.path.join(folder_path, "training_loss.jpg")
+    loss_path = os.path.join(folder_path, "sdat.jpg")
     plt.legend()
     plt.savefig(loss_path)
     plt.clf()
     plt.cla()
     plt.close()
 
-    plt.plot(model_dict["stats"]["valid_d_loss"], label="Validation Discrimination Loss")
-    plt.plot(model_dict["stats"]["valid_s_loss_source"], label="Validation Segmentation Loss Source")
-    plt.plot(model_dict["stats"]["valid_s_loss_target"], label="Validation Segmentation Loss Target")
-    plt.suptitle(source_domain + " : " + target_domain + " Validation Loss", fontsize=15)
-    plt.xlabel('Epoch', fontsize=12)
-    plt.ylabel('Loss', fontsize=12)
-    folder_name = source_domain + "_" + target_domain
-    folder_path = os.path.join("figures", folder_name)
-    Path(folder_path).mkdir(parents=True, exist_ok=True)
-    loss_path = os.path.join(folder_path, "validation_loss.jpg")
-    plt.legend()
-    plt.savefig(loss_path)
-    plt.clf()
-    plt.cla()
-    plt.close()
+    # plt.plot(model_dict["stats"]["valid_d_loss"], label="Validation Discrimination Loss")
+    # plt.plot(model_dict["stats"]["valid_s_loss_source"], label="Validation Segmentation Loss Source")
+    # plt.plot(model_dict["stats"]["valid_s_loss_target"], label="Validation Segmentation Loss Target")
+    # plt.suptitle(source_domain + " : " + target_domain + " Validation Loss", fontsize=15)
+    # plt.xlabel('Epoch', fontsize=12)
+    # plt.ylabel('Loss', fontsize=12)
+    # folder_name = source_domain + "_" + target_domain
+    # folder_path = os.path.join("figures", folder_name)
+    # Path(folder_path).mkdir(parents=True, exist_ok=True)
+    # loss_path = os.path.join(folder_path, "validation_loss.jpg")
+    # plt.legend()
+    # plt.savefig(loss_path)
+    # plt.clf()
+    # plt.cla()
+    # plt.close()
+    #
+    # plt.plot(model_dict["stats"]["dice_score_source"], label="Source Dice Score")
+    # plt.plot(model_dict["stats"]["dice_score_target"], label="Target Dice Score")
+    # plt.suptitle(source_domain + " : " + target_domain + " Target Dice Score", fontsize=15)
+    # plt.xlabel('Epoch', fontsize=12)
+    # plt.ylabel('Dice Score', fontsize=12)
+    # folder_name = source_domain + "_" + target_domain
+    # folder_path = os.path.join("figures", folder_name)
+    # Path(folder_path).mkdir(parents=True, exist_ok=True)
+    # loss_path = os.path.join(folder_path, "target_dice_score.jpg")
+    # plt.legend()
+    # plt.savefig(loss_path)
+    # plt.clf()
+    # plt.cla()
+    # plt.close()
+    #
+    # plt.plot(model_dict["stats"]["accuracy"], label="Accuracy")
+    # plt.suptitle(source_domain + " : " + target_domain + " Validation Accuracy", fontsize=15)
+    # plt.xlabel('Epoch', fontsize=12)
+    # plt.ylabel('Dice Score', fontsize=12)
+    # folder_name = source_domain + "_" + target_domain
+    # folder_path = os.path.join("..", "figures", folder_name)
+    # Path(folder_path).mkdir(parents=True, exist_ok=True)
+    # loss_path = os.path.join(folder_path, "accuracy.jpg")
+    # plt.legend()
+    # plt.savefig(loss_path)
+    # plt.clf()
+    # plt.cla()
+    # plt.close()
 
-    plt.plot(model_dict["stats"]["dice_score_source"], label="Source Dice Score")
-    plt.plot(model_dict["stats"]["dice_score_target"], label="Target Dice Score")
-    plt.suptitle(source_domain + " : " + target_domain + " Target Dice Score", fontsize=15)
-    plt.xlabel('Epoch', fontsize=12)
-    plt.ylabel('Dice Score', fontsize=12)
-    folder_name = source_domain + "_" + target_domain
-    folder_path = os.path.join("figures", folder_name)
-    Path(folder_path).mkdir(parents=True, exist_ok=True)
-    loss_path = os.path.join(folder_path, "target_dice_score.jpg")
-    plt.legend()
-    plt.savefig(loss_path)
-    plt.clf()
-    plt.cla()
-    plt.close()
-
-    plt.plot(model_dict["stats"]["accuracy"], label="Accuracy")
-    plt.suptitle(source_domain + " : " + target_domain + " Validation Accuracy", fontsize=15)
-    plt.xlabel('Epoch', fontsize=12)
-    plt.ylabel('Dice Score', fontsize=12)
-    folder_name = source_domain + "_" + target_domain
-    folder_path = os.path.join("..", "figures", folder_name)
-    Path(folder_path).mkdir(parents=True, exist_ok=True)
-    loss_path = os.path.join(folder_path, "accuracy.jpg")
-    plt.legend()
-    plt.savefig(loss_path)
-    plt.clf()
-    plt.cla()
-    plt.close()
-
-
-# plot_results("ge", "philips")
-train_model()
+# train_model()
+plot_results("ge", "philips")

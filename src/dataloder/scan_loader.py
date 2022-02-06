@@ -82,7 +82,7 @@ class ScanDataset(Dataset):
         mask = transform(mask).unsqueeze(0)
         # get label for scan
         if domain_name == source_domain:
-            label = torch.tensor([0])
-        elif domain_name == target_domain:
             label = torch.tensor([1])
+        elif domain_name == target_domain:
+            label = torch.tensor([0])
         return scan, mask, label

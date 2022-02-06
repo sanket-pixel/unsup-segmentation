@@ -10,8 +10,11 @@ class Discriminator(nn.Module):
         n = n_filters_init
         self.discriminator = nn.Sequential(
             nn.Conv2d(n * 8, n * 16, stride=2, kernel_size=3),
+            nn.ReLU(),
             nn.Conv2d(n * 16, n * 32, stride=2, kernel_size=3),
+            nn.ReLU(),
             nn.Conv2d(n * 32, n * 64, stride=2, kernel_size=3),
+            nn.ReLU()
         )
 
         self.flat_map_dim = self.dummy_forward()
