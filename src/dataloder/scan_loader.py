@@ -31,6 +31,7 @@ def get_scan_list(mode, source_domain, target_domain):
 
 
 def get_transform(pad_size):
+    # to_tensor = transforms.ToTensor()
     pad = transforms.Pad(pad_size, fill=0, padding_mode="constant")
     # to_tensor = transforms.ToTensor()
     # normalize = transforms.Normalize([0.5], [0.5])
@@ -73,12 +74,16 @@ class ScanDataset(Dataset):
         mask = read_nib(mask_path, mask_name)[slice_id]
         # get size of scan
         scan_size = scan.shape[-1]
+        # clip scans
+        scan = scan.clip(scan.float().quantile(0.01), scan.float().quantile(0.95))
+
         # normalize scan
-        normalized_scan = scan / scan.max()
+        if scan.max() > 0:
+            scan = scan / scan.max()
         # get transform
         transform = get_transform(int((self.max_pad - scan_size) / 2))
         # apply transform for scan and mask
-        scan = transform(normalized_scan).unsqueeze(0)
+        scan = transform(scan).unsqueeze(0)
         mask = transform(mask).unsqueeze(0)
         # get label for scan
         if domain_name == source_domain:

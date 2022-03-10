@@ -103,15 +103,11 @@ class UNet2D(nn.Module):
         x2 = self.down2(x1)
         x3 = self.down3(x2)
 
-
         x2_up = self.up3(x3)
         x1_up = self.up2(x2_up + self.shortcut2(x2))
         x0_up = self.up1(x1_up + self.shortcut1(x1))
         x_out = self.out_path(x0_up + self.shortcut0(x0))
-        return torch.sigmoid(x_out), x3
+
+        return F.sigmoid(x_out), x3
 
 
-# model = UNet2D(n_chans_in=1, n_chans_out=1)
-# X = torch.rand(10, 1, 288, 288)
-# y = model(X)
-# print(y)

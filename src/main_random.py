@@ -220,15 +220,12 @@ def train_model():
     SAVE_FREQ = config.getint("Classification", "SAVE_FREQ")
     lamda = config.getfloat("Classification", "lamda")
     model = config.get("Classification", "model")
-    segmentor_path = os.path.join("models", "ge3_updateddata_train70_25epochs_combinedloss.pkl")
-    discriminator_path = os.path.join("models","discriminator.pth")
+    segmentor_path = os.path.join("models", "segmentor.pkl")
+    discriminator_path = os.path.join("models","discriminator.pkl")
     # initialize model
     # for using with optical flow change modality to "optical_flow"
     segmentor = torch.load(segmentor_path)
     discriminator = torch.load(discriminator_path)
-
-
-
     segmentor_loss = DiceBCELoss().to(device)
     discriminator_loss = torch.nn.BCELoss().to(device)  # cross entropy loss
 

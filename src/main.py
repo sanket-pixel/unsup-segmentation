@@ -3,6 +3,7 @@ import os
 from torch.utils.data import DataLoader
 from src.models.discriminator import Discriminator
 from src.models.segmentor import UNet2D
+from src.models.segmentor import UNet2D
 from shutil import copy
 from src.dataloder.scan_loader import ScanDataset
 from src.models.dice_bce_loss import DiceBCELoss, DiceScore
@@ -31,8 +32,9 @@ batch_size_train = config.getint("Dataloader", "batch_size_train")
 batch_size_eval = config.getint("Dataloader", "batch_size_eval")
 
 scan_dataset_train = ScanDataset("training")
+dataloader_train = DataLoader(scan_dataset_train, batch_size=batch_size_train, shuffle=True, num_workers=2)
 
-dataloader_train = DataLoader(scan_dataset_train, batch_size=batch_size_train, shuffle=True, num_workers=16)
+# dataloader_train = DataLoader(scan_dataset_train, batch_size=batch_size_train, shuffle=True, num_workers=16)
 # dataloader_eval = DataLoader(scan_dataset_eval, batch_size=batch_size_train, shuffle=False, num_workers=16)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -218,13 +220,15 @@ def train_model():
     EVAL_FREQ = config.getint("Classification", "EVAL_FREQ")
     SAVE_FREQ = config.getint("Classification", "SAVE_FREQ")
     lamda = config.getfloat("Classification", "lamda")
-    model = config.get("Classification", "model")
-    segmentor_path = os.path.join("models", "ge3_updateddata_train70_25epochs_combinedloss.pkl")
-    discriminator_path = os.path.join("models","discriminator.pth")
+    # model = config.get("Classification", "model")
+    # segmentor_path = os.path.join("models", "ge3_updateddata_train70_25epochs_combinedloss.pkl")
+    # discriminator_path = os.path.join("models","discriminator.pth")
     # initialize model
     # for using with optical flow change modality to "optical_flow"
-    segmentor = torch.load(segmentor_path)
-    discriminator = torch.load(discriminator_path)
+    # segmentor = torch.load(segmentor_path)
+    # discriminator = torch.load(discriminator_path)
+    segmentor = UNet2D(1, 1).to(device)
+    discriminator = Discriminator().to(device)
 
     segmentor_loss = DiceBCELoss().to(device)
     discriminator_loss = torch.nn.BCELoss().to(device)  # cross entropy loss
@@ -281,7 +285,6 @@ def train_model():
             d_loss.backward()
             optimizer_d.step()
 
-            # predicted_masks, x3 = segmentor(scans)
             if source_indices.shape[0] > 0:
                 predicted_masks_source = predicted_masks[source_indices]
                 mask_source = masks[source_indices]
@@ -315,7 +318,7 @@ def train_model():
             gc.collect()
             torch.cuda.empty_cache()
             try:
-                progress_bar.set_description(f"Epoch {0 + epoch} Iter {i + 1}: adv loss {a_loss.item():.5f}. ")
+                progress_bar.set_description(f"Epoch {0 + epoch} Iter {i + 1}: Segmentation loss {s_loss.item():.5f}. ")
                 del predicted_labels, predicted_masks, x3, d_loss, s_loss, a_loss
             except:
                 pass
@@ -362,7 +365,7 @@ def plot_results(source_domain, target_domain):
     # plt.plot(model_dict["stats"]["d_loss"], label="Discriminator Loss")
     plt.suptitle(source_domain + " : " + target_domain + " SDAT Score", fontsize=15)
     plt.xlabel('Epoch', fontsize=12)
-    plt.ylabel('Loss', fontsize=12)
+    plt.ylabel('SDAT', fontsize=12)
     folder_name = source_domain + "_" + target_domain
     folder_path = os.path.join("figures", folder_name)
     Path(folder_path).mkdir(parents=True, exist_ok=True)
@@ -373,50 +376,50 @@ def plot_results(source_domain, target_domain):
     plt.cla()
     plt.close()
 
-    # plt.plot(model_dict["stats"]["valid_d_loss"], label="Validation Discrimination Loss")
-    # plt.plot(model_dict["stats"]["valid_s_loss_source"], label="Validation Segmentation Loss Source")
-    # plt.plot(model_dict["stats"]["valid_s_loss_target"], label="Validation Segmentation Loss Target")
-    # plt.suptitle(source_domain + " : " + target_domain + " Validation Loss", fontsize=15)
-    # plt.xlabel('Epoch', fontsize=12)
-    # plt.ylabel('Loss', fontsize=12)
-    # folder_name = source_domain + "_" + target_domain
-    # folder_path = os.path.join("figures", folder_name)
-    # Path(folder_path).mkdir(parents=True, exist_ok=True)
-    # loss_path = os.path.join(folder_path, "validation_loss.jpg")
-    # plt.legend()
-    # plt.savefig(loss_path)
-    # plt.clf()
-    # plt.cla()
-    # plt.close()
-    #
-    # plt.plot(model_dict["stats"]["dice_score_source"], label="Source Dice Score")
-    # plt.plot(model_dict["stats"]["dice_score_target"], label="Target Dice Score")
-    # plt.suptitle(source_domain + " : " + target_domain + " Target Dice Score", fontsize=15)
-    # plt.xlabel('Epoch', fontsize=12)
-    # plt.ylabel('Dice Score', fontsize=12)
-    # folder_name = source_domain + "_" + target_domain
-    # folder_path = os.path.join("figures", folder_name)
-    # Path(folder_path).mkdir(parents=True, exist_ok=True)
-    # loss_path = os.path.join(folder_path, "target_dice_score.jpg")
-    # plt.legend()
-    # plt.savefig(loss_path)
-    # plt.clf()
-    # plt.cla()
-    # plt.close()
-    #
-    # plt.plot(model_dict["stats"]["accuracy"], label="Accuracy")
-    # plt.suptitle(source_domain + " : " + target_domain + " Validation Accuracy", fontsize=15)
-    # plt.xlabel('Epoch', fontsize=12)
-    # plt.ylabel('Dice Score', fontsize=12)
-    # folder_name = source_domain + "_" + target_domain
-    # folder_path = os.path.join("..", "figures", folder_name)
-    # Path(folder_path).mkdir(parents=True, exist_ok=True)
-    # loss_path = os.path.join(folder_path, "accuracy.jpg")
-    # plt.legend()
-    # plt.savefig(loss_path)
-    # plt.clf()
-    # plt.cla()
-    # plt.close()
+    plt.plot(model_dict["stats"]["valid_d_loss"], label="Validation Discrimination Loss")
+    plt.plot(model_dict["stats"]["valid_s_loss_source"], label="Validation Segmentation Loss Source")
+    plt.plot(model_dict["stats"]["valid_s_loss_target"], label="Validation Segmentation Loss Target")
+    plt.suptitle(source_domain + " : " + target_domain + " Validation Loss", fontsize=15)
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Loss', fontsize=12)
+    folder_name = source_domain + "_" + target_domain
+    folder_path = os.path.join("figures", folder_name)
+    Path(folder_path).mkdir(parents=True, exist_ok=True)
+    loss_path = os.path.join(folder_path, "validation_loss.jpg")
+    plt.legend()
+    plt.savefig(loss_path)
+    plt.clf()
+    plt.cla()
+    plt.close()
 
-# train_model()
-plot_results("ge", "philips")
+    plt.plot(model_dict["stats"]["dice_score_source"], label="Source Dice Score")
+    plt.plot(model_dict["stats"]["dice_score_target"], label="Target Dice Score")
+    plt.suptitle(source_domain + " : " + target_domain + " Target Dice Score", fontsize=15)
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Dice Score', fontsize=12)
+    folder_name = source_domain + "_" + target_domain
+    folder_path = os.path.join("figures", folder_name)
+    Path(folder_path).mkdir(parents=True, exist_ok=True)
+    loss_path = os.path.join(folder_path, "target_dice_score.jpg")
+    plt.legend()
+    plt.savefig(loss_path)
+    plt.clf()
+    plt.cla()
+    plt.close()
+
+    plt.plot(model_dict["stats"]["accuracy"], label="Accuracy")
+    plt.suptitle(source_domain + " : " + target_domain + " Validation Accuracy", fontsize=15)
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Dice Score', fontsize=12)
+    folder_name = source_domain + "_" + target_domain
+    folder_path = os.path.join("..", "figures", folder_name)
+    Path(folder_path).mkdir(parents=True, exist_ok=True)
+    loss_path = os.path.join(folder_path, "accuracy.jpg")
+    plt.legend()
+    plt.savefig(loss_path)
+    plt.clf()
+    plt.cla()
+    plt.close()
+
+train_model()
+# plot_results("ge", "philips")
