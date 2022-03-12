@@ -19,6 +19,7 @@ Image segmentation is an important task for many medical analytical applications
 ### View the code at:
  - Implementation of original model : https://colab.research.google.com/drive/1i8NZjhn-xSChntrxJ-H3UJQwlD2oMo4B?usp=sharing
  - Modified implementation to run other experiments: https://colab.research.google.com/drive/1B7T-Fncv7GOjojs39WIO8xT_0_Ddu3Tu?usp=sharing (Similar to code above with minor modifications)
+ - Pre-training the segmenter: https://colab.research.google.com/drive/1LdEZWETB3oq-9l4Ha5RTlmZNER0UhHtB?usp=sharing
 
 ### Pre-requisites to run
  1. To run the notebooks as is you will need a pro account. Otherwise you will have to make changes to the Dataset based on available memory.
