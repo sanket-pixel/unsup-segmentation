@@ -3,6 +3,11 @@
 ## Abstract
 Image segmentation is an important task for many medical analytical applications. With the advancement in data and computational resources, deep learning methods have been very effective to solve the segmentation task. However, a segmentation model trained on a particular domain's domain (source) performs poorly on when used on novel (target) domains. To that end, in this lab we implement a paper on unsupervised domain adaptation that introduces an adversarial learning based domain invariant segmentation model. The model trains a segmenter to segment the scans from source domain along with a feature discriminator that discriminates features from source and target domains. Finally their model also consists of entropy discriminator that discriminates the entropy distributions from source and target domains. For adversarial training, the discriminator labels were flipped which enforces the alignment between the features and entropy of source and target. DICE Score and Surface Dice score were used to evaluate the segmentation performance. However, in this lab, we made a few crucial changes to the original model design. Unlike the original paper, we used a U-Net backbone for segmentation. Moreover, the feature discriminator is trained on both source and target domains, unlike the original paper.  
 
+## General Pre-requisites:
+- Access to the Calgary Campinas CC-359 dataset (https://sites.google.com/view/calgary-campinas-dataset/home)
+- Deep mind libray for surface distance (https://github.com/deepmind/surface-distance)
+- Deep-pipe library (https://deep-pipe.readthedocs.io/en/latest/)
+
 ## Guide to run Desktop version
 
   1. Change the config file ( **src/configs/experiment.config**  ) to tune parameters to change training conditions. The names of the parameters in the config file are self-explainatory.
